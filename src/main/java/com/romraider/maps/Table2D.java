@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2012 RomRaider.com
+ * Copyright (C) 2006-2016 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -140,7 +140,7 @@ public class Table2D extends Table {
             }
         }
 
-        if(null == axis.getName() || axis.getName().isEmpty() || "" == axis.getName()) {
+        if(null == axis.getName() || axis.getName().isEmpty() || Settings.BLANK == axis.getName()) {
             ;// Do not add label.
         } else if(null == axis.getCurrentScale() || "0x" == axis.getCurrentScale().getUnit()) {
             // static or no scale exists.
@@ -158,7 +158,7 @@ public class Table2D extends Table {
 
     @Override
     public void updateTableLabel() {
-        if(null == axis.getName() || axis.getName().length() < 1 || "" == axis.getName()) {
+        if(null == axis.getName() || axis.getName().length() < 1 || Settings.BLANK == axis.getName()) {
             ;// Do not update label.
         } else if(null == axis.getCurrentScale() || "0x" == axis.getCurrentScale().getUnit()) {
             // static or no scale exists.
@@ -237,6 +237,37 @@ public class Table2D extends Table {
         }
     }
 
+	@Override
+	public void shiftCursorUp() {
+        if (data[highlightY].isSelected()) {
+        	data[highlightY].setSelected(false);
+        }
+        axis.selectCellAt(highlightY);
+	}
+
+	@Override
+	public void shiftCursorDown() {
+        axis.cursorDown();
+	}
+
+	@Override
+	public void shiftCursorLeft() {
+        if (highlightY > 0 && data[highlightY].isSelected()) {
+        	selectCellAtWithoutClear(highlightY - 1);
+        } else {
+        	axis.shiftCursorLeft();
+        }
+	}
+
+	@Override
+	public void shiftCursorRight() {
+        if (highlightY < data.length - 1 && data[highlightY].isSelected()) {
+        	selectCellAtWithoutClear(highlightY + 1);
+        } else {
+        	axis.shiftCursorRight();
+        }
+	}
+
     @Override
     public void startHighlight(int x, int y) {
         axis.clearSelectedData();
@@ -270,11 +301,11 @@ public class Table2D extends Table {
 
     @Override
     public void paste() {
-        StringTokenizer st = new StringTokenizer("");
-        String input = "";
+        StringTokenizer st = new StringTokenizer(Settings.BLANK);
+        String input = Settings.BLANK;
         try {
             input = (String) Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null).getTransferData(DataFlavor.stringFlavor);
-            st = new StringTokenizer(input);
+            st = new StringTokenizer(input, ST_DELIMITER);
         } catch (UnsupportedFlavorException ex) { /* wrong paste type -- do nothing */
         } catch (IOException ex) {
         }
@@ -282,7 +313,12 @@ public class Table2D extends Table {
         String pasteType = st.nextToken();
 
         if (pasteType.equalsIgnoreCase("[Table2D]")) { // Paste table
-            String axisValues = "[Table1D]" + Settings.NEW_LINE + st.nextToken(Settings.NEW_LINE);
+            String currentToken = st.nextToken(Settings.NEW_LINE);
+            if (currentToken.endsWith("\t")) {
+                currentToken = st.nextToken(Settings.NEW_LINE);
+            }
+
+            String axisValues = "[Table1D]" + Settings.NEW_LINE + currentToken;
             String dataValues = "[Table1D]" + Settings.NEW_LINE + st.nextToken(Settings.NEW_LINE);
 
             // put axis in clipboard and paste
@@ -317,7 +353,30 @@ public class Table2D extends Table {
 
     @Override
     public void horizontalInterpolate() {
-        super.horizontalInterpolate();
+        int[] coords = { getDataSize(), 0};
+        DataCell[] tableData = getData();
+        DataCell[] axisData = getAxis().getData();
+
+        for (int i = 0; i < getDataSize(); ++i) {
+            if (tableData[i].isSelected()) {
+                if (i < coords[0])
+                    coords[0] = i;
+                if (i > coords[1])
+                    coords[1] = i;
+            }
+        }
+        if (coords[1] - coords[0] > 1) {
+            double x, x1, x2, y1, y2;
+            x1 = axisData[coords[0]].getBinValue();
+            y1 = tableData[coords[0]].getBinValue();
+            x2 = axisData[coords[1]].getBinValue();
+            y2 = tableData[coords[1]].getBinValue();
+            for (int i = coords[0] + 1; i < coords[1]; ++i) {
+                x = axisData[i].getBinValue();
+                data[i].setBinValue(linearInterpolation(x, x1, x2, y1, y2));
+            }
+        }
+        // Interpolate x axis in case the x axis in selected.
         this.getAxis().horizontalInterpolate();
     }
 
@@ -356,9 +415,6 @@ public class Table2D extends Table {
     public void setOverlayLog(boolean overlayLog) {
         super.setOverlayLog(overlayLog);
         axis.setOverlayLog(overlayLog);
-        if (overlayLog) {
-            axis.clearLiveDataTrace();
-        }
     }
 
     @Override

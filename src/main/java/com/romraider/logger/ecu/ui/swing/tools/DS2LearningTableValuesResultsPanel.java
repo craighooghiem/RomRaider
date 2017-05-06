@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2013 RomRaider.com
+ * Copyright (C) 2006-2016 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 
 package com.romraider.logger.ecu.ui.swing.tools;
 
+import static com.romraider.Settings.COMMA;
 import static javax.swing.JOptionPane.ERROR_MESSAGE;
 import static javax.swing.JOptionPane.INFORMATION_MESSAGE;
 import static javax.swing.JOptionPane.showMessageDialog;
@@ -32,6 +33,7 @@ import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +43,8 @@ import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
@@ -62,29 +66,29 @@ import com.romraider.util.FormatFilename;
 import com.romraider.util.SettingsManager;
 
 /**
- * This class is used to build and display the Learning Table Values
+ * This class is used to build and display the Adaptation Table Values
  * retrieved from the ECU.
  */
-public class LearningTableValuesResultsPanel extends JDialog {
-    private static final long serialVersionUID = 6716454297236022709L;
-    private final String DIALOG_TITLE = "Learning Table Values";
+public class DS2LearningTableValuesResultsPanel extends JDialog {
+    private static final long serialVersionUID = 6716454294436022709L;
+    private final String DIALOG_TITLE = "Adaptation Table Values";
     private final String DT_FORMAT = "%1$tY%1$tm%1$td-%1$tH%1$tM%1$tS";
     private final int LTV_WIDTH = 720;
-    private final int LTV_HEIGHT = 450;
+    private final int LTV_HEIGHT = 595;
     private final JPanel contentPanel = new JPanel();
     private JTable vehicleInfoTable;
     private JTable afLearningTable;
-    private JTable flkcTable;
-    private final String FLKC_NAME = "Fine Learning Knock Correction (\u00B0 of correction)";
+    private List<JTable> knockTables = new ArrayList<JTable>();
+    private final String FLKC_NAME = "Knock Adaptation (\u00B0 of correction)";
 
-    public LearningTableValuesResultsPanel(
+    public DS2LearningTableValuesResultsPanel(
             EcuLogger logger,
             Map<String, Object> vehicleInfo,
             String[] afRanges,
             List<List<Object>> afLearning,
             String[] flkcLoad,
             String[] flkcRpm,
-            List<List<EcuQuery>> flkcData) {
+            List<List<List<EcuQuery>>> flkcQueryTables) {
 
         super(logger, false);
         setIconImage(logger.getIconImage());
@@ -92,24 +96,24 @@ public class LearningTableValuesResultsPanel extends JDialog {
         setBounds(
                 (logger.getWidth() > LTV_WIDTH) ?
                         logger.getX() + (logger.getWidth() - LTV_WIDTH) / 2 : 0,
-                        (logger.getHeight() > LTV_HEIGHT) ?
-                                logger.getY() + ((logger.getHeight() - LTV_HEIGHT) / 2) : 0,
-                                LTV_WIDTH,
-                                LTV_HEIGHT);
+                (logger.getHeight() > LTV_HEIGHT) ?
+                        logger.getY() + ((logger.getHeight() - LTV_HEIGHT) / 2) : 0,
+                LTV_WIDTH,
+                LTV_HEIGHT);
         getContentPane().setLayout(new BorderLayout());
 
         contentPanel.setBorder(new EmptyBorder(2, 2, 2, 2));
         contentPanel.setLayout(null);
         contentPanel.add(buildVehicleInfoPanel(vehicleInfo));
         contentPanel.add(buildAfLearningPanel(afRanges, afLearning));
-        contentPanel.add(buildFlkcPanel(flkcLoad, flkcRpm, flkcData));
+        contentPanel.add(buildFlkcPanel(flkcLoad, flkcRpm, flkcQueryTables));
 
         getContentPane().add(contentPanel, BorderLayout.CENTER);
         getContentPane().add(buildSaveReultsPanel(), BorderLayout.SOUTH);
     }
 
     /**
-     * This method is called to display the Learning Table Values
+     * This method is called to display the Adaptation Table Values
      * retrieved from the ECU.
      */
     public final void displayLearningResultsPanel() {
@@ -164,13 +168,13 @@ public class LearningTableValuesResultsPanel extends JDialog {
         final JPanel afLearningTitlePanel = new JPanel();
         afLearningTitlePanel.setBorder(
                 new TitledBorder(null,
-                        "A/F Learning (Stored)",
+                        "A/F Adaptation (Stored)",
                         TitledBorder.LEADING,
                         TitledBorder.TOP, null, null));
         afLearningTitlePanel.setBounds(10, 72, 450, 100);
         afLearningTitlePanel.setLayout(new BorderLayout(0, 0));
 
-        final JLabel xLabel = new JLabel("Air/Fuel Ranges (g/s)");
+        final JLabel xLabel = new JLabel("Applied Adaptations");
         SetFont.plain(xLabel);
         xLabel.setHorizontalAlignment(SwingConstants.CENTER);
         afLearningTitlePanel.add(xLabel, BorderLayout.NORTH);
@@ -211,7 +215,7 @@ public class LearningTableValuesResultsPanel extends JDialog {
         }
         else {
             afLearningTablePanel.add(new JLabel(
-                    " No data - A/F Extended parameter IDs not defined"));
+                    " No data - A/F Adaptation parameter IDs not defined"));
         }
 
         afLearningTitlePanel.add(afLearningTablePanel, BorderLayout.CENTER);
@@ -221,7 +225,7 @@ public class LearningTableValuesResultsPanel extends JDialog {
     private final JPanel buildFlkcPanel(
             String[] flkcLoad,
             String[] flkcRpm,
-            List<List<EcuQuery>> flkcData) {
+            List<List<List<EcuQuery>>> flkcQueryTables) {
 
         final JPanel flkcTitlePanel = new JPanel();
         flkcTitlePanel.setBorder(
@@ -229,43 +233,44 @@ public class LearningTableValuesResultsPanel extends JDialog {
                         FLKC_NAME,
                         TitledBorder.LEADING,
                         TitledBorder.TOP, null, null));
-        flkcTitlePanel.setBounds(10, 172, 692, 204);
+        flkcTitlePanel.setBounds(10, 172, 692, 354);
         flkcTitlePanel.setLayout(new BorderLayout(0, 0));
 
-        final JLabel xLabel = new JLabel("Engine Load Ranges (g/rev)");
+        final JLabel xLabel = new JLabel("Engine Load (mg/stroke)");
         SetFont.plain(xLabel);
         xLabel.setHorizontalAlignment(SwingConstants.CENTER);
         flkcTitlePanel.add(xLabel, BorderLayout.NORTH);
 
-        final JLabel yLabel = new JLabel("Engine Speed Ranges (RPM)");
+        final JLabel yLabel = new JLabel("Engine Speed (RPM)");
         SetFont.plain(yLabel);
         yLabel.setUI(new VerticalLabelUI(false));
         flkcTitlePanel.add(yLabel, BorderLayout.WEST);
 
-        final JPanel flkcTablePanel = new JPanel();
-        flkcTablePanel.setBorder(
-                new EtchedBorder(EtchedBorder.LOWERED, null, null));
-        flkcTablePanel.setLayout(new BorderLayout(0, 0));
-
-        final FineLearningKnockCorrectionTableModel tableModel =
-                new FineLearningKnockCorrectionTableModel();
-        tableModel.setColumnHeadings(flkcLoad);
-        tableModel.setRomHeadings(flkcRpm);
-        tableModel.setFlkcData(flkcData);
-        flkcTable = new JTable(tableModel);
-        setTableBehaviour(flkcTable);
-        flkcTablePanel.add(
-                formatTableHeader(flkcTable),
-                BorderLayout.PAGE_START);
-        if (flkcData.size() > 0) {
-            flkcTablePanel.add(flkcTable);
+        final JTabbedPane tabs = new JTabbedPane();
+        for (int i = 0; i < flkcQueryTables.size(); i++) {
+            final FineLearningKnockCorrectionTableModel tableModel =
+                    new FineLearningKnockCorrectionTableModel();
+            tableModel.setColumnHeadings(flkcLoad);
+            tableModel.setRomHeadings(flkcRpm);
+            tableModel.setFlkcData(flkcQueryTables.get(i));
+            final JTable knockTable = new JTable(tableModel);
+            knockTables.add(knockTable);
+            setTableBehaviour(knockTable);
+            formatTableHeader(knockTable);
+            final JScrollPane flkcTablePanel = new JScrollPane(knockTable);
+            flkcTablePanel.setBorder(
+                    new EtchedBorder(EtchedBorder.LOWERED, null, null));
+            tabs.addTab("Table " + (i + 1), flkcTablePanel);
+        }
+        if (flkcQueryTables.size() > 0) {
+            flkcTitlePanel.add(tabs, BorderLayout.CENTER);
         }
         else {
-            flkcTablePanel.add(new JLabel(
-                    " No data - FLKC reference parameter ID not defined"));
+            flkcTitlePanel.removeAll();
+            flkcTitlePanel.add(new JLabel(
+                    " No data - Knock Adaptation parameter ID not defined"),
+                    BorderLayout.CENTER);
         }
-
-        flkcTitlePanel.add(flkcTablePanel, BorderLayout.CENTER);
         return flkcTitlePanel;
     }
 
@@ -315,7 +320,7 @@ public class LearningTableValuesResultsPanel extends JDialog {
 
     private final void saveTableText() {
         final String nowStr = String.format(DT_FORMAT, System.currentTimeMillis());
-        final String fileName = String.format("%s%sromraiderLTV_%s.csv",
+        final String fileName = String.format("%s%sromraiderADPT_%s.csv",
                 SettingsManager.getSettings().getLoggerOutputDirPath(),
                 File.separator,
                 nowStr);
@@ -324,50 +329,66 @@ public class LearningTableValuesResultsPanel extends JDialog {
             final String EOL = System.getProperty("line.separator");
             final BufferedWriter bw = new BufferedWriter(
                     new FileWriter(csvFile));
-            bw.write("Learning Table Values" + EOL);
+            bw.write("Adaptation Table Values" + EOL);
             Object result = 0;
             int columnCount = vehicleInfoTable.getColumnCount();
             for (int i = 0; i < columnCount; i++ ) {
                 result = vehicleInfoTable.getTableHeader().getColumnModel().
                         getColumn(i).getHeaderValue();
-                bw.append(result.toString() + ",");
+                bw.append(result.toString());
+                bw.append(COMMA);
             }
             bw.append(EOL);
             for (int i = 0; i < columnCount; i++ ) {
                 result = vehicleInfoTable.getValueAt(0, i);
-                bw.append(result + ",");
+                bw.append(result.toString());
+                bw.append(COMMA);
             }
             bw.append(EOL + EOL);
-            bw.write("A/F Learning (Stored)" + EOL);
+            bw.write("A/F Adaptation (Stored)" + EOL);
             columnCount = afLearningTable.getColumnCount();
             int rowCount = afLearningTable.getRowCount();
             for (int i = 0; i < columnCount; i++) {
                 result = afLearningTable.getTableHeader().getColumnModel().
                         getColumn(i).getHeaderValue();
-                bw.append(result.toString() + ",");
+                bw.append(result.toString());
+                bw.append(COMMA);
             }
             bw.append(EOL);
             for (int i = 0; i < rowCount; i++) {
                 for (int j = 0; j < columnCount; j++) {
                     result = afLearningTable.getValueAt(i, j);
-                    bw.append(result + ",");
+                    bw.append(result.toString());
+                    bw.append(COMMA);
                 }
                 bw.append(EOL);
             }
             bw.append(EOL);
             bw.write(FLKC_NAME + EOL);
-            columnCount = flkcTable.getColumnCount();
-            rowCount = flkcTable.getRowCount();
-            for (int i = 0; i < columnCount; i++) {
-                result = flkcTable.getTableHeader().getColumnModel().
-                        getColumn(i).getHeaderValue();
-                bw.append(result.toString() + ",");
+            int k = 1;
+            for (JTable knockTable : knockTables) {
+                columnCount = knockTable.getColumnCount();
+                for (int i = 0; i < columnCount; i++) {
+                    result = knockTable.getTableHeader().getColumnModel().
+                            getColumn(i).getHeaderValue();
+                    if (result.toString().equals(" ")) {
+                        result = String.format("Table %d", k);
+                    }
+                    bw.append(result.toString());
+                    bw.append(COMMA);
+                }
+                k++;
             }
             bw.append(EOL);
+            rowCount = knockTables.get(0).getRowCount();
             for (int i = 0; i < rowCount; i++) {
-                for (int j = 0; j < columnCount; j++) {
-                    result = flkcTable.getValueAt(i, j);
-                    bw.append(result + ",");
+                for (JTable knockTable : knockTables) {
+                    columnCount = knockTable.getColumnCount();
+                    for (int j = 0; j < columnCount; j++) {
+                        result = knockTable.getValueAt(i, j);
+                        bw.append(result.toString());
+                        bw.append(COMMA);
+                    }
                 }
                 bw.append(EOL);
             }
@@ -395,7 +416,7 @@ public class LearningTableValuesResultsPanel extends JDialog {
                 BufferedImage.TYPE_INT_ARGB);
         contentPanel.paint(resultsImage.createGraphics());
         final String nowStr = String.format(DT_FORMAT, System.currentTimeMillis());
-        final String fileName = String.format("%s%sromraiderLTV_%s.png",
+        final String fileName = String.format("%s%sromraiderADPT_%s.png",
                 SettingsManager.getSettings().getLoggerOutputDirPath(),
                 File.separator,
                 nowStr);
@@ -408,7 +429,7 @@ public class LearningTableValuesResultsPanel extends JDialog {
                     imageFile);
             showMessageDialog(
                     null,
-                    "Learning Table Values image saved to: " + shortName,
+                    "Adaptation Table Values image saved to: " + shortName,
                     "Save Success",
                     INFORMATION_MESSAGE);
         }

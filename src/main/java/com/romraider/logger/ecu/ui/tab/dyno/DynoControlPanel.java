@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2014 RomRaider.com
+ * Copyright (C) 2006-2016 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,8 @@
 
 package com.romraider.logger.ecu.ui.tab.dyno;
 
+import static com.romraider.Settings.COMMA;
+import static com.romraider.Settings.SEMICOLON;
 import static com.romraider.Version.CARS_DEFS_URL;
 import static com.romraider.logger.car.util.SpeedCalculator.calculateMph;
 import static com.romraider.logger.car.util.SpeedCalculator.calculateRpm;
@@ -47,6 +49,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -85,6 +88,7 @@ import com.romraider.logger.ecu.definition.ExternalData;
 import com.romraider.logger.ecu.definition.LoggerData;
 import com.romraider.logger.ecu.ui.DataRegistrationBroker;
 import com.romraider.net.BrowserControl;
+import com.romraider.util.NumberUtil;
 import com.romraider.util.SettingsManager;
 
 public final class DynoControlPanel extends JPanel {
@@ -120,8 +124,6 @@ public final class DynoControlPanel extends JPanel {
     private static final String DYNO_TT = "Use this mode to estimate Power & Torque";
     private static final String ET_TT = "Use this mode to measure trap times";
     private static final String COLON = ":";
-    private static final String COMMA = ",";
-    private static final String SEMICOLON = ";";
     private static final String TAB = "\u0009";
     private static final String RR_LOG_TIME = "Time";
     private static final String COBB_AP_TIME = "Seconds";
@@ -808,6 +810,7 @@ public final class DynoControlPanel extends JPanel {
         dButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
+                loadFileCB.setEnabled(true);
                 chartPanel.setDyno();
                 if (loadFileCB.isSelected()) {
                     recordDataButton.setText("Load From File");
@@ -827,6 +830,8 @@ public final class DynoControlPanel extends JPanel {
         eButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
+                loadFileCB.setEnabled(false);
+                loadFileCB.setSelected(false);
                 chartPanel.setET();
                 recordDataButton.setText("Record ET");
                 //                filterPanel.setVisible(false);
@@ -1000,18 +1005,18 @@ public final class DynoControlPanel extends JPanel {
                 int taCol = 0;
                 double minRpm = 3500;
                 double maxRpm = 0;
-                String delimiter = COMMA;
+                String delimiter = SEMICOLON;
                 String line = inputStream.readLine();
                 String[] headers;
-                headers = line.split(COMMA);
+                headers = line.split(SEMICOLON);
                 if (headers.length < 3) {
                     headers = line.split(TAB);
                     if (headers.length > 2) {
                         delimiter = TAB;
                     }
                     else {
-                        headers = line.split(SEMICOLON);
-                        if (headers.length > 2) delimiter = SEMICOLON;
+                        headers = line.split(COMMA);
+                        if (headers.length > 2) delimiter = COMMA;
                     }
                 }
                 for (int x = 0; x < headers.length; x++) {
@@ -1038,30 +1043,30 @@ public final class DynoControlPanel extends JPanel {
                         "; VS units: " + vsLogUnits);
                 while ((line = inputStream.readLine()) != null) {
                     String[] values = line.split(delimiter);
-                    if (Double.parseDouble(values[taCol]) > 98) {
+                    if (NumberUtil.doubleValue(values[taCol]) > 98) {
                         double logTime = 0;
                         if (atrTime) {
                             String[] timeStamp = values[timeCol].split(COLON);
                             if (timeStamp.length == 3) {
-                                logTime = ((Double.parseDouble(timeStamp[0]) * 3600) +
-                                        (Double.parseDouble(timeStamp[1]) * 60) +
-                                        Double.parseDouble(timeStamp[2])) * timeMult;
+                                logTime = (NumberUtil.doubleValue(timeStamp[0]) * 3600) +
+                                        (NumberUtil.doubleValue(timeStamp[1]) * 60) +
+                                        NumberUtil.doubleValue(timeStamp[2]) * timeMult;
                             } else {
-                                logTime = ((Double.parseDouble(timeStamp[0]) * 60) +
-                                        Double.parseDouble(timeStamp[1])) * timeMult;
+                                logTime = (NumberUtil.doubleValue(timeStamp[0]) * 60) +
+                                        NumberUtil.doubleValue(timeStamp[1]) * timeMult;
                             }
                         } else {
-                            logTime = Double.parseDouble(values[timeCol]) * timeMult;
+                            logTime = NumberUtil.doubleValue(values[timeCol]) * timeMult;
                         }
                         if (startTime == -999999999) startTime = logTime;
                         logTime = logTime - startTime;
                         double logRpm = 0;
                         if (isManual()) {
-                            logRpm = Double.parseDouble(values[rpmCol]);
+                            logRpm = NumberUtil.doubleValue(values[rpmCol]);
                             minRpm = Math.min(minRpm, logRpm);
                             maxRpm = Math.max(maxRpm, logRpm);
                         } else {
-                            logRpm = Double.parseDouble(values[vsCol]);
+                            logRpm = NumberUtil.doubleValue(values[vsCol]);
                             minRpm = Math.min(minRpm, calculateRpm(logRpm, rpm2mph, vsLogUnits));
                             maxRpm = Math.max(maxRpm, calculateRpm(logRpm, rpm2mph, vsLogUnits));
                         }
@@ -1075,6 +1080,12 @@ public final class DynoControlPanel extends JPanel {
                 interpolateButton.doClick();
             }
             catch (IOException e) {
+				e.printStackTrace();
+            }
+            catch (ParseException e) {
+				e.printStackTrace();
+			}
+            finally {
                 if (inputStream != null) {
                     try {
                         inputStream.close();

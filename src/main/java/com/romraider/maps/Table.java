@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2012 RomRaider.com
+ * Copyright (C) 2006-2017 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,15 +50,21 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 
+import org.apache.log4j.Logger;
+
 import com.romraider.Settings;
 import com.romraider.editor.ecu.ECUEditorManager;
 import com.romraider.swing.TableToolBar;
 import com.romraider.util.JEPUtil;
+import com.romraider.util.NumberUtil;
 import com.romraider.util.SettingsManager;
 import com.romraider.xml.RomAttributeParser;
 
 public abstract class Table extends JPanel implements Serializable {
     private static final long serialVersionUID = 6559256489995552645L;
+    protected static final Logger LOGGER = Logger.getLogger(Table.class);
+    protected static final String ST_DELIMITER = "\t\n\r\f";
+    protected static int memModelEndian;
 
     protected String name;
     protected int type;
@@ -118,7 +124,6 @@ public abstract class Table extends JPanel implements Serializable {
 
     public Table() {
         scales.clear();
-        scales.add(new Scale());
 
         this.setLayout(borderLayout);
         this.add(centerPanel, BorderLayout.CENTER);
@@ -155,6 +160,38 @@ public abstract class Table extends JPanel implements Serializable {
             @Override
             public void actionPerformed(ActionEvent e) {
                 cursorUp();
+            }
+        };
+        Action shiftRightAction = new AbstractAction() {
+            private static final long serialVersionUID = 1042888914300385041L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                shiftCursorRight();
+            }
+        };
+        Action shiftLeftAction = new AbstractAction() {
+            private static final long serialVersionUID = -4970441655277214171L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+            	shiftCursorLeft();
+            }
+        };
+        Action shiftDownAction = new AbstractAction() {
+            private static final long serialVersionUID = -7898502951812125984L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+            	shiftCursorDown();
+            }
+        };
+        Action shiftUpAction = new AbstractAction() {
+            private static final long serialVersionUID = 6937621527147666631L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+            	shiftCursorUp();
             }
         };
         Action incCoarseAction = new AbstractAction() {
@@ -294,7 +331,7 @@ public abstract class Table extends JPanel implements Serializable {
             }
         };
         Action interpolate = new AbstractAction() {
-            private static final long serialVersionUID = -2350912575392447149L;
+            private static final long serialVersionUID = -2357532575392447149L;
 
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -302,7 +339,7 @@ public abstract class Table extends JPanel implements Serializable {
             }
         };
         Action verticalInterpolate = new AbstractAction() {
-            private static final long serialVersionUID = -2350912575392447149L;
+            private static final long serialVersionUID = -2375322575392447149L;
 
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -318,7 +355,7 @@ public abstract class Table extends JPanel implements Serializable {
             }
         };
         Action multiplyAction = new AbstractAction() {
-            private static final long serialVersionUID = -2350912575392447149L;
+            private static final long serialVersionUID = -2753212575392447149L;
 
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -326,7 +363,7 @@ public abstract class Table extends JPanel implements Serializable {
             }
         };
         Action numNegAction = new AbstractAction() {
-            private static final long serialVersionUID = -6346750245035640773L;
+            private static final long serialVersionUID = -7532750245035640773L;
 
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -341,6 +378,10 @@ public abstract class Table extends JPanel implements Serializable {
         KeyStroke left = KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0);
         KeyStroke up = KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0);
         KeyStroke down = KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0);
+        KeyStroke shiftRight = KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, KeyEvent.SHIFT_DOWN_MASK);
+        KeyStroke shiftLeft = KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,  KeyEvent.SHIFT_DOWN_MASK);
+        KeyStroke shiftUp = KeyStroke.getKeyStroke(KeyEvent.VK_UP,  KeyEvent.SHIFT_DOWN_MASK);
+        KeyStroke shiftDown = KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,  KeyEvent.SHIFT_DOWN_MASK);
         KeyStroke decrement = KeyStroke.getKeyStroke('-');
         KeyStroke increment = KeyStroke.getKeyStroke('+');
         KeyStroke decrement2 = KeyStroke.getKeyStroke("control DOWN");
@@ -373,6 +414,10 @@ public abstract class Table extends JPanel implements Serializable {
         im.put(left, "left");
         im.put(up, "up");
         im.put(down, "down");
+        im.put(shiftRight, "shiftRight");
+        im.put(shiftLeft, "shiftLeft");
+        im.put(shiftUp, "shiftUp");
+        im.put(shiftDown, "shiftDown");
         im.put(increment, "incCoarseAction");
         im.put(decrement, "decCoarseAction");
         im.put(increment2, "incCoarseAction");
@@ -405,6 +450,10 @@ public abstract class Table extends JPanel implements Serializable {
         getActionMap().put(im.get(left), leftAction);
         getActionMap().put(im.get(up), upAction);
         getActionMap().put(im.get(down), downAction);
+        getActionMap().put(im.get(shiftRight), shiftRightAction);
+        getActionMap().put(im.get(shiftLeft), shiftLeftAction);
+        getActionMap().put(im.get(shiftUp), shiftUpAction);
+        getActionMap().put(im.get(shiftDown), shiftDownAction);
         getActionMap().put(im.get(increment), incCoarseAction);
         getActionMap().put(im.get(decrement), decCoarseAction);
         getActionMap().put(im.get(increment2), incCoarseAction);
@@ -464,7 +513,15 @@ public abstract class Table extends JPanel implements Serializable {
                     byteValue[1] = input[getStorageAddress() + i * 4 - ramOffset + 1];
                     byteValue[2] = input[getStorageAddress() + i * 4 - ramOffset + 2];
                     byteValue[3] = input[getStorageAddress() + i * 4 - ramOffset + 3];
-                    dataValue = RomAttributeParser.byteToFloat(byteValue, endian);
+                    dataValue = RomAttributeParser.byteToFloat(byteValue, endian, memModelEndian);
+
+                } else if (storageType == Settings.STORAGE_TYPE_MOVI20 ||
+                		storageType == Settings.STORAGE_TYPE_MOVI20S) { // when data is in MOVI20 instruction
+                    dataValue = RomAttributeParser.parseByteValue(input,
+                            endian,
+                            getStorageAddress() + i * 3 - ramOffset,
+                            storageType,
+                            signed);
 
                 } else { // integer storage type
                     dataValue = RomAttributeParser.parseByteValue(input,
@@ -743,6 +800,14 @@ public abstract class Table extends JPanel implements Serializable {
                     minAllowedBin = Integer.MIN_VALUE;
                     maxAllowedBin = Integer.MAX_VALUE;
                     break;
+                case Settings.STORAGE_TYPE_MOVI20:
+                    minAllowedBin = Settings.MOVI20_MIN_VALUE;
+                    maxAllowedBin = Settings.MOVI20_MAX_VALUE;
+                    break;
+                case Settings.STORAGE_TYPE_MOVI20S:
+                    minAllowedBin = Settings.MOVI20S_MIN_VALUE;
+                    maxAllowedBin = Settings.MOVI20S_MAX_VALUE;
+                    break;
                 }
             }
             else {
@@ -800,11 +865,23 @@ public abstract class Table extends JPanel implements Serializable {
     }
 
     public double getMaxReal() {
-        return JEPUtil.evaluate(getCurrentScale().getExpression(), getMaxBin());
+        double minReal = JEPUtil.evaluate(getCurrentScale().getExpression(), getMinBin());
+        double maxReal = JEPUtil.evaluate(getCurrentScale().getExpression(), getMaxBin());
+        if(minReal > maxReal) {
+            return minReal;
+        } else {
+            return maxReal;
+        }
     }
 
     public double getMinReal() {
-        return JEPUtil.evaluate(getCurrentScale().getExpression(), getMinBin());
+        double minReal = JEPUtil.evaluate(getCurrentScale().getExpression(), getMinBin());
+        double maxReal = JEPUtil.evaluate(getCurrentScale().getExpression(), getMaxBin());
+        if(minReal < maxReal) {
+            return minReal;
+        } else {
+            return maxReal;
+        }
     }
 
     public void setMaxBin(double maxBin) {
@@ -949,6 +1026,14 @@ public abstract class Table extends JPanel implements Serializable {
 
     public abstract void cursorRight();
 
+    public abstract void shiftCursorUp();
+
+    public abstract void shiftCursorDown();
+
+    public abstract void shiftCursorLeft();
+
+    public abstract void shiftCursorRight();
+
     public void setRevertPoint() {
         for (DataCell cell : data) {
             cell.setRevertPoint();
@@ -977,16 +1062,39 @@ public abstract class Table extends JPanel implements Serializable {
             for (int i = 0; i < data.length; i++) {
                 // determine output byte values
                 byte[] output;
+                if(this.isStaticDataTable() && storageType > 0) {
+                    LOGGER.warn("Static data table: " +this.getName()+ ", storageType: "+storageType);
+                }
                 if (storageType != Settings.STORAGE_TYPE_FLOAT) {
                     // convert byte values
-                    output = RomAttributeParser.parseIntegerValue((int) data[i].getBinValue(), endian, storageType);
-                    for (int z = 0; z < storageType; z++) { // insert into file
-                        binData[i * storageType + z + getStorageAddress() - ramOffset] = output[z];
+                    if(this.isStaticDataTable() && storageType > 0) {
+                        try {
+                            int parsedValue = Integer.parseInt(data[i].getStaticText());
+                            output = RomAttributeParser.parseIntegerValue(parsedValue, endian, storageType);
+                        } catch (NumberFormatException ex) {
+                            LOGGER.error("Error parsing static data table value: " + data[i].getStaticText(), ex);
+                            LOGGER.error("Validate the table definition storageType and data value.");
+                            continue;
+                        }
+                    } else if(this.isStaticDataTable() && storageType < 1) {
+                        // Do not save the value.
+                        //LOGGER.debug("The static data table value will not be saved.");
+                        continue;
+                    }  else {
+                        output = RomAttributeParser.parseIntegerValue((int) data[i].getBinValue(), endian, storageType);
+                    }
+                    int byteLength = storageType;
+                    if (storageType == Settings.STORAGE_TYPE_MOVI20 ||
+                    		storageType == Settings.STORAGE_TYPE_MOVI20S) { // when data is in MOVI20 instruction
+                    	byteLength = 3;
+                    }
+                    for (int z = 0; z < byteLength; z++) { // insert into file
+                        binData[i * byteLength + z + getStorageAddress() - ramOffset] = output[z];
                     }
 
                 } else { // float
                     // convert byte values
-                    output = RomAttributeParser.floatToByte((float) data[i].getBinValue(), endian);
+                    output = RomAttributeParser.floatToByte((float) data[i].getBinValue(), endian, memModelEndian);
                     for (int z = 0; z < 4; z++) { // insert in to file
                         binData[i * 4 + z + getStorageAddress() - ramOffset] = output[z];
                     }
@@ -1023,6 +1131,14 @@ public abstract class Table extends JPanel implements Serializable {
         }
     }
 
+    public void selectCellAtWithoutClear(int y) {
+        if(y >= 0 && y < data.length) {
+            data[y].setSelected(true);
+            highlightY = y;
+            ECUEditorManager.getECUEditor().getTableToolBar().updateTableToolBar(this);
+        }
+    }
+
     public void copySelection() {
         Window ancestorWindow = SwingUtilities.getWindowAncestor(this);
 
@@ -1039,7 +1155,12 @@ public abstract class Table extends JPanel implements Serializable {
     public StringBuffer getTableAsString() {
         StringBuffer output = new StringBuffer(Settings.BLANK);
         for (int i = 0; i < data.length; i++) {
-            output.append(data[i].getRealValue());
+            if (overlayLog) {
+                output.append(data[i].getCellText());
+            }
+            else {
+                output.append(NumberUtil.stringValue(data[i].getRealValue()));
+            }
             if (i < data.length - 1) {
                 output.append(Settings.TAB);
             }
@@ -1074,69 +1195,57 @@ public abstract class Table extends JPanel implements Serializable {
 
     public void paste() {
         // TODO: This sounds like desearialize.
-
-        StringTokenizer st = new StringTokenizer(Settings.BLANK);
-        try {
-            String input = (String) Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null).getTransferData(DataFlavor.stringFlavor);
-            st = new StringTokenizer(input);
-        } catch (UnsupportedFlavorException ex) { /* wrong paste type -- do nothing */
-        } catch (IOException ex) {
-        }
-
-        String pasteType = st.nextToken();
-
-        if ("[Table1D]".equalsIgnoreCase(pasteType)) { // copied entire table
-            int i = 0;
-            while (st.hasMoreTokens()) {
-                String currentToken = st.nextToken();
-                try {
-                    if (!data[i].getText().equalsIgnoreCase(currentToken)) {
-                        data[i].setRealValue(currentToken);
-                    }
-                } catch (ArrayIndexOutOfBoundsException ex) { /* table larger than target, ignore*/ }
-                i++;
+        if (!staticDataTable) {
+            StringTokenizer st = new StringTokenizer(Settings.BLANK);
+            try {
+                String input = (String) Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null).getTransferData(DataFlavor.stringFlavor);
+                st = new StringTokenizer(input, ST_DELIMITER);
+            } catch (UnsupportedFlavorException ex) { /* wrong paste type -- do nothing */
+            } catch (IOException ex) {
             }
-        } else if ("[Selection1D]".equalsIgnoreCase(pasteType)) { // copied selection
-            if (data[highlightY].isSelected()) {
+    
+            String pasteType = st.nextToken();
+    
+            if ("[Table1D]".equalsIgnoreCase(pasteType)) { // copied entire table
                 int i = 0;
                 while (st.hasMoreTokens()) {
+                    String currentToken = st.nextToken();
                     try {
-                        data[highlightY + i].setRealValue(st.nextToken());
-                    } catch (ArrayIndexOutOfBoundsException ex) { /* paste larger than target, ignore */ }
+                        if (!data[i].getText().equalsIgnoreCase(currentToken)) {
+                            data[i].setRealValue(currentToken);
+                        }
+                    } catch (ArrayIndexOutOfBoundsException ex) { /* table larger than target, ignore*/ }
                     i++;
+                }
+            } else if ("[Selection1D]".equalsIgnoreCase(pasteType)) { // copied selection
+                if (data[highlightY].isSelected()) {
+                    int i = 0;
+                    while (st.hasMoreTokens()) {
+                        String currentToken = st.nextToken();
+                        try {
+                            if (!data[highlightY + i].getText().equalsIgnoreCase(currentToken)) {
+                                data[highlightY + i].setRealValue(currentToken);
+                            }
+                        } catch (ArrayIndexOutOfBoundsException ex) { /* paste larger than target, ignore */ }
+                        i++;
+                    }
                 }
             }
         }
     }
 
     public void verticalInterpolate() {
-        horizontalInterpolate();
     }
 
     public void horizontalInterpolate() {
-        int[] coords = { getDataSize(), 0};
-        DataCell[] tableData = getData();
-
-        int y;
-        for (y = 0; y < getDataSize(); y++) {
-            if (tableData[y].isSelected()) {
-                if (y < coords[0])
-                    coords[0] = y;
-                if (y > coords[1])
-                    coords[1] = y;
-            }
-        }
-        if (coords[1] - coords[0] > 1) {
-            double diff = (tableData[coords[0]].getRealValue() - tableData[coords[1]].getRealValue()) / (coords[1] - coords[0]);
-            if (Math.abs(diff) > 0) {
-                for (y = coords[0] + 1; y < coords[1]; y++)
-                    data[y].setRealValue(String.valueOf(tableData[y - 1].getRealValue() - diff));
-            }
-        }
     }
 
     public void interpolate() {
         horizontalInterpolate();
+    }
+    
+    public double linearInterpolation(double x, double x1, double x2, double y1, double y2) {
+        return (x1 == x2) ? 0.0 : (y1 + (x - x1) * (y2 - y1) / (x2 - x1));
     }
 
     public void validateScaling() {
@@ -1274,9 +1383,6 @@ public abstract class Table extends JPanel implements Serializable {
 
     public void setOverlayLog(boolean overlayLog) {
         this.overlayLog = overlayLog;
-        if (overlayLog) {
-            clearLiveDataTrace();
-        }
     }
 
     public boolean getOverlayLog()
@@ -1299,10 +1405,11 @@ public abstract class Table extends JPanel implements Serializable {
     public void highlightLiveData(String liveVal) {
         if (getOverlayLog()) {
             double liveValue = 0.0;
-            try{
-                liveValue = Double.parseDouble(liveVal);
-            } catch(NumberFormatException nex) {
-                return;
+            try {
+            	liveValue = NumberUtil.doubleValue(liveVal);
+            } catch (Exception ex) {
+            	LOGGER.error("Table - live data highlight parsing error for value: " + liveVal);
+            	return;
             }
 
             int startIdx = data.length;
@@ -1390,6 +1497,14 @@ public abstract class Table extends JPanel implements Serializable {
     public void setStaticDataTable(boolean staticDataTable) {
         this.staticDataTable = staticDataTable;
     }
+
+    public void setMemModelEndian(int endian) {
+        memModelEndian = endian;
+    }
+
+    public int getMemModelEndian() {
+        return memModelEndian;
+    }
 }
 
 class CopySelectionWorker extends SwingWorker<Void, Void> {
@@ -1403,8 +1518,7 @@ class CopySelectionWorker extends SwingWorker<Void, Void> {
     protected Void doInBackground() throws Exception {
         // find bounds of selection
         // coords[0] = x min, y min, x max, y max
-        String newline = System.getProperty("line.separator");
-        String output = "[Selection1D]" + newline;
+        String output = "[Selection1D]" + Settings.NEW_LINE;
         boolean copy = false;
         int[] coords = new int[2];
         coords[0] = table.getDataSize();
@@ -1424,7 +1538,7 @@ class CopySelectionWorker extends SwingWorker<Void, Void> {
         //make a string of the selection
         for (int i = coords[0]; i <= coords[1]; i++) {
             if (table.getData()[i].isSelected()) {
-                output = output + table.getData()[i].getText();
+                output = output + NumberUtil.stringValue(table.getData()[i].getRealValue());
             } else {
                 output = output + "x"; // x represents non-selected cell
             }

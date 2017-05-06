@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2014 RomRaider.com
+ * Copyright (C) 2006-2017 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@ import java.util.Vector;
 
 import com.romraider.io.connection.ConnectionProperties;
 import com.romraider.logger.ecu.definition.EcuDefinition;
+import com.romraider.logger.ecu.definition.Module;
 import com.romraider.logger.external.phidget.interfacekit.io.IntfKitSensor;
 
 public class Settings implements Serializable {
@@ -46,6 +47,8 @@ public class Settings implements Serializable {
     public static final String NEW_LINE = System.getProperty("line.separator");
     public static final String TAB = "\t";
     public static final String BLANK = "";
+    public static final String COMMA = ",";
+    public static final String SEMICOLON = ";";
 
     /* Clipboard Settings */
     public static final String TABLE_CLIPBOARD_FORMAT_ELEMENT = "table-clipboard-format";
@@ -104,6 +107,12 @@ public class Settings implements Serializable {
     public static final int COMPARE_DISPLAY_PERCENT = 1;
     public static final int COMPARE_DISPLAY_ABSOLUTE = 2;
 
+    public static final int MOVI20_MIN_VALUE = 0xfff80000;
+    public static final int MOVI20_MAX_VALUE = 0x0007ffff;
+    public static final int MOVI20S_MIN_VALUE = 0xf8000000;
+    public static final int MOVI20S_MAX_VALUE = 0x07ffff00;
+    public static final int STORAGE_TYPE_MOVI20 = 20;
+    public static final int STORAGE_TYPE_MOVI20S = 28;
     public static final int STORAGE_TYPE_FLOAT = 99;
     public static final boolean STORAGE_DATA_SIGNED = false;
 
@@ -201,7 +210,7 @@ public class Settings implements Serializable {
     private static String loggerProfileFilePath;
     private static String loggerOutputDirPath = System.getProperty("user.home");
     private String fileLoggingControllerSwitchId = "S20"; // defogger switch by default
-    private boolean fileLoggingControllerSwitchActive = true;
+    private boolean fileLoggingControllerSwitchActive = false;
     private boolean fileLoggingAbsoluteTimestamp;
     private String logfileNameText;
     private boolean logExternalsOnly;
@@ -211,12 +220,14 @@ public class Settings implements Serializable {
     private Point loggerWindowLocation = new Point();
     private boolean loggerWindowMaximized;
     private int loggerSelectedTabIndex;
+    private int loggerSelectedGaugeIndex = 0;
     private boolean loggerParameterListState = true;
     private ConnectionProperties loggerConnectionProperties;
     private Map<String, EcuDefinition> loggerEcuDefinitionMap;
     private Map<String, String> loggerPluginPorts;
     private boolean loggerRefreshMode;
-    private static byte loggerDestinationId = 0x10;
+    private static String loggerTargetModule = "ecu";
+    private static Module loggerDestinationTarget;
     private boolean fastPoll = true;
     private double loggerDividerLocation = 400;
     private String loggerDebuggingLevel = "info";
@@ -625,6 +636,14 @@ public class Settings implements Serializable {
         return loggerSelectedTabIndex;
     }
 
+    public void setLoggerSelectedGaugeIndex(int loggerSelectGaugeIndex) {
+        this.loggerSelectedGaugeIndex = loggerSelectGaugeIndex;
+    }
+
+    public int getLoggerSelectedGaugeIndex() {
+        return loggerSelectedGaugeIndex;
+    }
+
     public Map<String, String> getLoggerPluginPorts() {
         return loggerPluginPorts;
     }
@@ -649,12 +668,20 @@ public class Settings implements Serializable {
         return loggerRefreshMode;
     }
 
-    public void setDestinationId(byte id) {
-        loggerDestinationId = id;
+    public void setTargetModule(String string) {
+        loggerTargetModule = string;
     }
 
-    public byte getDestinationId() {
-        return loggerDestinationId;
+    public String getTargetModule() {
+        return loggerTargetModule;
+    }
+
+    public void setDestinationTarget(Module module) {
+        loggerDestinationTarget = module;
+    }
+
+    public Module getDestinationTarget() {
+        return loggerDestinationTarget;
     }
 
     public void setFastPoll(boolean state) {

@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2014 RomRaider.com
+ * Copyright (C) 2006-2015 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@ import com.romraider.logger.ecu.comms.query.ResponseImpl;
 import com.romraider.logger.ecu.definition.EcuData;
 import com.romraider.logger.ecu.definition.ExternalData;
 import com.romraider.logger.ecu.definition.LoggerData;
+import com.romraider.logger.ecu.definition.Module;
 import com.romraider.logger.ecu.ui.MessageListener;
 import com.romraider.logger.ecu.ui.StatusChangeListener;
 import com.romraider.logger.ecu.ui.handler.DataUpdateHandler;
@@ -67,8 +68,6 @@ public final class QueryManagerImpl implements QueryManager {
     private final List<String> removeList = new ArrayList<String>();
     private static final PollingState pollState = new PollingStateImpl();
     private static final Settings settings = SettingsManager.getSettings();
-    private static final String ECU = "ECU";
-    private static final String TCU = "TCU";
     private static final String EXT = "Externals";
     private final EcuInitCallback ecuInitCallback;
     private final MessageListener messageListener;
@@ -148,13 +147,13 @@ public final class QueryManagerImpl implements QueryManager {
             while (!stop) {
                 notifyConnecting();
                 if (!settings.isLogExternalsOnly() &&
-                        doEcuInit(settings.getDestinationId())) {
+                        doEcuInit(settings.getDestinationTarget())) {
 
                     notifyReading();
-                    runLogger(settings.getDestinationId());
+                    runLogger(settings.getDestinationTarget());
                 } else if (settings.isLogExternalsOnly()) {
                     notifyReading();
-                    runLogger((byte) -1);
+                    runLogger(null);
                 } else {
                     sleep(1000L);
                 }
@@ -168,30 +167,22 @@ public final class QueryManagerImpl implements QueryManager {
         }
     }
 
-    private boolean doEcuInit(byte id) {
-        String target = null;
-        if (id == 0x10){
-            target = ECU;
-        }
-        if (id == 0x18){
-            target = TCU;
-        }
-
+    private boolean doEcuInit(Module module) {
         try {
             LoggerConnection connection =
                     getConnection(settings.getLoggerProtocol(),
                             settings.getLoggerPort(),
                             settings.getLoggerConnectionProperties());
             try {
-                messageListener.reportMessage("Sending " + target + " Init...");
-                connection.ecuInit(ecuInitCallback, id);
-                messageListener.reportMessage("Sending " + target + " Init...done.");
+                messageListener.reportMessage("Sending " + module.getName() + " Init...");
+                connection.ecuInit(ecuInitCallback, module);
+                messageListener.reportMessage("Sending " + module.getName() + " Init...done.");
                 return true;
             } finally {
                 connection.close();
             }
         } catch (Exception e) {
-            messageListener.reportMessage("Unable to send " + target +
+            messageListener.reportMessage("Unable to send " + module.getName() +
                     " init - check cable is connected and ignition is on.");
             logError(e);
             return false;
@@ -206,16 +197,13 @@ public final class QueryManagerImpl implements QueryManager {
         }
     }
 
-    private void runLogger(byte id) {
-        String target = null;
-        if (id == -1){
-            target = EXT;
+    private void runLogger(Module module) {
+        String moduleName = null;
+        if (module == null){
+            moduleName = EXT;
         }
-        if (id == 0x10){
-            target = ECU;
-        }
-        if (id == 0x18){
-            target = TCU;
+        else {
+            moduleName = module.getName();
         }
         TransmissionManager txManager = new TransmissionManagerImpl();
         long start = currentTimeMillis();
@@ -229,9 +217,9 @@ public final class QueryManagerImpl implements QueryManager {
                 updateQueryList();
                 if (queryMap.isEmpty()) {
                     if (pollState.isLastQuery() &&
-                            pollState.getCurrentState() == 0) {
+                            pollState.getCurrentState() == PollingState.State.STATE_0) {
                         endEcuQueries(txManager);
-                        pollState.setLastState(0);
+                        pollState.setLastState(PollingState.State.STATE_0);
                     }
                     start = System.currentTimeMillis();
                     count = 0;
@@ -249,40 +237,40 @@ public final class QueryManagerImpl implements QueryManager {
                                 endEcuQueries(txManager);
                             }
                             if (pollState.isFastPoll()) {
-                                if (pollState.getCurrentState() == 0 &&
+                                if (pollState.getCurrentState() == PollingState.State.STATE_0 &&
                                         pollState.isNewQuery()) {
-                                    pollState.setCurrentState(1);
+                                    pollState.setCurrentState(PollingState.State.STATE_1);
                                     pollState.setNewQuery(false);
                                 }
-                                if (pollState.getCurrentState() == 0 &&
+                                if (pollState.getCurrentState() == PollingState.State.STATE_0 &&
                                         !pollState.isNewQuery()) {
-                                    pollState.setCurrentState(1);
+                                    pollState.setCurrentState(PollingState.State.STATE_1);
                                 }
-                                if (pollState.getCurrentState() == 1 &&
+                                if (pollState.getCurrentState() == PollingState.State.STATE_1 &&
                                         pollState.isNewQuery()) {
-                                    pollState.setCurrentState(0);
-                                    pollState.setLastState(1);
+                                    pollState.setCurrentState(PollingState.State.STATE_0);
+                                    pollState.setLastState(PollingState.State.STATE_1);
                                     pollState.setNewQuery(false);
                                 }
-                                if (pollState.getCurrentState() == 1 &&
+                                if (pollState.getCurrentState() == PollingState.State.STATE_1 &&
                                         !pollState.isNewQuery()) {
-                                    pollState.setLastState(1);
+                                    pollState.setLastState(PollingState.State.STATE_1);
                                 }
                                 pollState.setLastQuery(true);
                             }
                             else {
-                                pollState.setCurrentState(0);
-                                pollState.setLastState(0);
+                                pollState.setCurrentState(PollingState.State.STATE_0);
+                                pollState.setLastState(PollingState.State.STATE_0);
                                 pollState.setNewQuery(false);
                             }
                             lastPollState = pollState.isFastPoll();
                         }
                         else {
                             if (pollState.isLastQuery() &&
-                                    pollState.getLastState() == 1) {
+                                    pollState.getLastState() == PollingState.State.STATE_1) {
                                 endEcuQueries(txManager);
-                                pollState.setLastState(0);
-                                pollState.setCurrentState(0);
+                                pollState.setLastState(PollingState.State.STATE_0);
+                                pollState.setCurrentState(PollingState.State.STATE_0);
                                 pollState.setNewQuery(true);
                             }
                         }
@@ -294,7 +282,7 @@ public final class QueryManagerImpl implements QueryManager {
                     }
                     handleQueryResponse();
                     count++;
-                    messageListener.reportMessage("Querying " + target + "...");
+                    messageListener.reportMessage("Querying " + moduleName + "...");
                     messageListener.reportStats(buildStatsMessage(start, count));
                 }
             }
@@ -302,7 +290,7 @@ public final class QueryManagerImpl implements QueryManager {
             messageListener.reportError(e);
         } finally {
             txManager.stop();
-            pollState.setCurrentState(0);
+            pollState.setCurrentState(PollingState.State.STATE_0);
             pollState.setNewQuery(true);
         }
     }
@@ -403,12 +391,12 @@ public final class QueryManagerImpl implements QueryManager {
     }
 
     private String buildStatsMessage(long start, int count) {
-        String state = "Slow-K:";
+        String state = String.format("%s Slow-K:",settings.getLoggerProtocol());
         if (pollState.isFastPoll()) {
-            state = "Fast-K:";
+            state = String.format("%s Fast-K:",settings.getLoggerProtocol());
         }
         if (settings.getTransportProtocol().equals("ISO15765")) {
-            state = "CAN bus:";
+            state = String.format("%s CAN bus:",settings.getLoggerProtocol());
         }
         if (settings.isLogExternalsOnly()) {
             state = "Externals:";

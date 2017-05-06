@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2012 RomRaider.com
+ * Copyright (C) 2006-2017 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,6 +45,7 @@ import javax.swing.SwingWorker;
 import com.romraider.Settings;
 import com.romraider.editor.ecu.ECUEditorManager;
 import com.romraider.logger.ecu.ui.swing.vertical.VerticalLabelUI;
+import com.romraider.util.NumberUtil;
 import com.romraider.util.SettingsManager;
 import com.romraider.xml.RomAttributeParser;
 
@@ -56,7 +57,6 @@ public class Table3D extends Table {
     private JLabel xAxisLabel;
     private JLabel yAxisLabel;
 
-    @SuppressWarnings("hiding")
     DataCell[][] data = new DataCell[1][1];
     private boolean swapXY = false;
     private boolean flipX = false;
@@ -156,7 +156,7 @@ public class Table3D extends Table {
         boolean tempLock = locked;
         locked = false;
 
-        // populate axiis
+        // populate axes
         try {
             xAxis.populateTable(input, romRamOffset);
             yAxis.populateTable(input, romRamOffset);
@@ -193,7 +193,15 @@ public class Table3D extends Table {
                     byteValue[1] = input[getStorageAddress() + offset * 4 - ramOffset + 1];
                     byteValue[2] = input[getStorageAddress() + offset * 4 - ramOffset + 2];
                     byteValue[3] = input[getStorageAddress() + offset * 4 - ramOffset + 3];
-                    cellBinValue = RomAttributeParser.byteToFloat(byteValue, endian);
+                    cellBinValue = RomAttributeParser.byteToFloat(byteValue, endian, memModelEndian);
+
+                } else if (storageType == Settings.STORAGE_TYPE_MOVI20 ||
+                		storageType == Settings.STORAGE_TYPE_MOVI20S) { // when data is in MOVI20 instruction
+                	cellBinValue = RomAttributeParser.parseByteValue(input,
+                            endian,
+                            getStorageAddress() + i * 3 - ramOffset,
+                            storageType,
+                            signed);
 
                 } else { // integer storage type
                     cellBinValue = RomAttributeParser.parseByteValue(input,
@@ -228,7 +236,7 @@ public class Table3D extends Table {
         this.add(topPanel, BorderLayout.NORTH);
         topPanel.add(new JLabel(getName(), JLabel.CENTER), BorderLayout.NORTH);
 
-        if(null == xAxis.getName() || xAxis.getName().length() < 1 || "" == xAxis.getName()) {
+        if(null == xAxis.getName() || xAxis.getName().length() < 1 || Settings.BLANK == xAxis.getName()) {
             ;// Do not add label.
         } else if(null == xAxis.getCurrentScale() || "0x" == xAxis.getCurrentScale().getUnit()) {
             // static or no scale exists.
@@ -240,7 +248,7 @@ public class Table3D extends Table {
         }
 
         yAxisLabel = null;
-        if(null == yAxis.getName() || yAxis.getName().length() < 1 || "" == yAxis.getName()) {
+        if(null == yAxis.getName() || yAxis.getName().length() < 1 || Settings.BLANK == yAxis.getName()) {
             ;// Do not add label.
         } else if(null == yAxis.getCurrentScale() || "0x" == yAxis.getCurrentScale().getUnit()) {
             // static or no scale exists.
@@ -260,7 +268,7 @@ public class Table3D extends Table {
 
     @Override
     public void updateTableLabel() {
-        if(null == xAxis.getName() || xAxis.getName().length() < 1 || "" == xAxis.getName()) {
+        if(null == xAxis.getName() || xAxis.getName().length() < 1 || Settings.BLANK == xAxis.getName()) {
             ;// Do not update label.
         } else if(null == xAxis.getCurrentScale() || "0x" == xAxis.getCurrentScale().getUnit()) {
             // static or no scale exists.
@@ -269,7 +277,7 @@ public class Table3D extends Table {
             xAxisLabel.setText(xAxis.getName() + " (" + xAxis.getCurrentScale().getUnit() + ")");
         }
 
-        if(null == yAxis.getName() || yAxis.getName().length() < 1 || "" == yAxis.getName()) {
+        if(null == yAxis.getName() || yAxis.getName().length() < 1 || Settings.BLANK == yAxis.getName()) {
             ;// Do not update label.
         } else if(null == yAxis.getCurrentScale() || "0x" == yAxis.getCurrentScale().getUnit()) {
             // static or no scale exists.
@@ -323,11 +331,16 @@ public class Table3D extends Table {
         output.append(Settings.NEW_LINE);
 
         for (int y = 0; y < getSizeY(); y++) {
-            output.append(yAxis.data[y].getRealValue());
+            output.append(NumberUtil.stringValue(yAxis.data[y].getRealValue()));
             output.append(Settings.TAB);
 
             for (int x = 0; x < getSizeX(); x++) {
-                output.append(data[x][y].getRealValue());
+                if (overlayLog) {
+                    output.append(data[x][y].getCellText());
+                }
+                else {
+                    output.append(NumberUtil.stringValue(data[x][y].getRealValue()));
+                }
                 if (x < getSizeX() - 1) {
                     output.append(Settings.TAB);
                 }
@@ -541,11 +554,16 @@ public class Table3D extends Table {
                     byte[] output;
                     if (storageType != Settings.STORAGE_TYPE_FLOAT) {
                         output = RomAttributeParser.parseIntegerValue((int) data[x][y].getBinValue(), endian, storageType);
-                        for (int z = 0; z < storageType; z++) {
-                            binData[offset * storageType + z + getStorageAddress() - ramOffset] = output[z];
+                        int byteLength = storageType;
+                        if (storageType == Settings.STORAGE_TYPE_MOVI20 ||
+                        		storageType == Settings.STORAGE_TYPE_MOVI20S) { // when data is in MOVI20 instruction
+                        	byteLength = 3;
+                        }
+                        for (int z = 0; z < byteLength; z++) {
+                            binData[offset * byteLength + z + getStorageAddress() - ramOffset] = output[z];
                         }
                     } else { // float
-                        output = RomAttributeParser.floatToByte((float) data[x][y].getBinValue(), endian);
+                        output = RomAttributeParser.floatToByte((float) data[x][y].getBinValue(), endian, memModelEndian);
                         for (int z = 0; z < 4; z++) {
                             binData[offset * 4 + z + getStorageAddress() - ramOffset] = output[z];
                         }
@@ -663,6 +681,51 @@ public class Table3D extends Table {
         }
     }
 
+	@Override
+	public void shiftCursorUp() {
+        if (highlightY > 0 && data[highlightX][highlightY].isSelected()) {
+        	selectCellAtWithoutClear(highlightX, highlightY - 1);
+        } else if (data[highlightX][highlightY].isSelected()) {
+        	data[highlightX][highlightY].setSelected(false);
+        	xAxis.selectCellAt(highlightX);
+        } else {
+        	xAxis.cursorUp();
+        	yAxis.shiftCursorUp();
+        }
+	}
+
+	@Override
+	public void shiftCursorDown() {
+        if (highlightY < getSizeY() - 1 && data[highlightX][highlightY].isSelected()) {
+        	selectCellAtWithoutClear(highlightX, highlightY + 1);
+        } else {
+            xAxis.shiftCursorDown();
+            yAxis.shiftCursorDown();
+        }
+	}
+
+	@Override
+	public void shiftCursorLeft() {
+        if (highlightX > 0 && data[highlightX][highlightY].isSelected()) {
+        	selectCellAtWithoutClear(highlightX - 1, highlightY);
+        } else if (data[highlightX][highlightY].isSelected()) {
+            yAxis.selectCellAt(highlightY);
+        } else {
+            xAxis.shiftCursorLeft();
+            yAxis.shiftCursorLeft();
+        }
+	}
+
+	@Override
+	public void shiftCursorRight() {
+        if (highlightX < getSizeX() - 1 && data[highlightX][highlightY].isSelected()) {
+        	selectCellAtWithoutClear(highlightX + 1, highlightY);
+        } else {
+            xAxis.shiftCursorRight();
+            yAxis.shiftCursorRight();
+        }
+	}
+
     @Override
     public void startHighlight(int x, int y) {
         xAxis.clearSelectedData();
@@ -697,11 +760,11 @@ public class Table3D extends Table {
 
     @Override
     public void paste() {
-        StringTokenizer st = new StringTokenizer("");
-        String input = "";
+        StringTokenizer st = new StringTokenizer(Settings.BLANK);
+        String input = Settings.BLANK;
         try {
             input = (String) Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null).getTransferData(DataFlavor.stringFlavor);
-            st = new StringTokenizer(input);
+            st = new StringTokenizer(input, ST_DELIMITER);
         } catch (UnsupportedFlavorException ex) { /* wrong paste type -- do nothing */
         } catch (IOException ex) {
         }
@@ -709,15 +772,18 @@ public class Table3D extends Table {
         String pasteType = st.nextToken();
 
         if ("[Table3D]".equalsIgnoreCase(pasteType)) { // Paste table
-            String newline = System.getProperty("line.separator");
-            String xAxisValues = "[Table1D]" + newline + st.nextToken(newline);
+            String currentToken = st.nextToken(Settings.NEW_LINE);
+            if (currentToken.endsWith("\t")) {
+                currentToken = st.nextToken(Settings.NEW_LINE);
+            }
+            String xAxisValues = "[Table1D]" + Settings.NEW_LINE + currentToken;
 
             // build y axis and data values
-            StringBuffer yAxisValues = new StringBuffer("[Table1D]" + newline + st.nextToken("\t"));
-            StringBuffer dataValues = new StringBuffer("[Table3D]" + newline + st.nextToken("\t") + st.nextToken(newline));
+            StringBuffer yAxisValues = new StringBuffer("[Table1D]" + Settings.NEW_LINE + st.nextToken("\t"));
+            StringBuffer dataValues = new StringBuffer("[Table3D]" + Settings.NEW_LINE + st.nextToken("\t") + st.nextToken(Settings.NEW_LINE));
             while (st.hasMoreTokens()) {
                 yAxisValues.append("\t").append(st.nextToken("\t"));
-                dataValues.append(newline).append(st.nextToken("\t")).append(st.nextToken(newline));
+                dataValues.append(Settings.NEW_LINE).append(st.nextToken("\t")).append(st.nextToken(Settings.NEW_LINE));
             }
 
             // put x axis in clipboard and paste
@@ -741,11 +807,10 @@ public class Table3D extends Table {
     }
 
     public void pasteValues() {
-        StringTokenizer st = new StringTokenizer("");
-        String newline = System.getProperty("line.separator");
+        StringTokenizer st = new StringTokenizer(Settings.BLANK);
         try {
             String input = (String) Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null).getTransferData(DataFlavor.stringFlavor);
-            st = new StringTokenizer(input);
+            st = new StringTokenizer(input, ST_DELIMITER);
         } catch (UnsupportedFlavorException ex) { /* wrong paste type -- do nothing */
         } catch (IOException ex) {
         }
@@ -762,20 +827,20 @@ public class Table3D extends Table {
         }
 
         // set values
-        for (int y = startY; y < getSizeY(); y++) {
-            if (st.hasMoreTokens()) {
-                StringTokenizer currentLine = new StringTokenizer(st.nextToken(newline));
-                for (int x = startX; x < getSizeX(); x++) {
-                    if (currentLine.hasMoreTokens()) {
-                        String currentToken = currentLine.nextToken();
+        for (int y = startY; st.hasMoreTokens() && y < getSizeY(); y++) {
+            String checkToken = st.nextToken(Settings.NEW_LINE);
+            if (y==startY && checkToken.endsWith("\t")) {
+                checkToken = st.nextToken(Settings.NEW_LINE);
+            }
+            StringTokenizer currentLine = new StringTokenizer(checkToken, ST_DELIMITER);
+            for (int x = startX; currentLine.hasMoreTokens() && x < getSizeX(); x++) {
+                String currentToken = currentLine.nextToken();
 
-                        try {
-                            if (!data[x][y].getText().equalsIgnoreCase(currentToken)) {
-                                data[x][y].setRealValue(currentToken);
-                            }
-                        } catch (ArrayIndexOutOfBoundsException ex) { /* copied table is larger than current table*/ }
+                try {
+                    if (!data[x][y].getText().equalsIgnoreCase(currentToken)) {
+                        data[x][y].setRealValue(currentToken);
                     }
-                }
+                } catch (ArrayIndexOutOfBoundsException ex) { /* copied table is larger than current table*/ }
             }
         }
     }
@@ -784,29 +849,32 @@ public class Table3D extends Table {
     public void verticalInterpolate() {
         int[] coords = { getSizeX(), getSizeY(), 0, 0};
         DataCell[][] tableData = get3dData();
-
-        int x, y;
-        for (x = 0; x < getSizeX(); x++) {
-            for (y = 0; y < getSizeY(); y++) {
-                if (tableData[x][y].isSelected()) {
-                    if (x < coords[0])
-                        coords[0] = x;
-                    if (x > coords[2])
-                        coords[2] = x;
-                    if (y < coords[1])
-                        coords[1] = y;
-                    if (y > coords[3])
-                        coords[3] = y;
+        DataCell[] axisData = getYAxis().getData();
+        int i, j;
+        for (i = 0; i < getSizeX(); ++i) {
+            for (j = 0; j < getSizeY(); ++j) {
+                if (tableData[i][j].isSelected()) {
+                    if (i < coords[0])
+                        coords[0] = i;
+                    if (i > coords[2])
+                        coords[2] = i;
+                    if (j < coords[1])
+                        coords[1] = j;
+                    if (j > coords[3])
+                        coords[3] = j;
                 }
             }
         }
         if (coords[3] - coords[1] > 1) {
-            double diff;
-            for (y = coords[0]; y <= coords[2]; y++) {
-                diff = (tableData[y][coords[1]].getRealValue() - tableData[y][coords[3]].getRealValue()) / (coords[3] - coords[1]);
-                if (Math.abs(diff) > 0) {
-                    for (x = coords[1] + 1; x < coords[3]; x++)
-                        tableData[y][x].setRealValue(String.valueOf(tableData[y][x - 1].getRealValue() - diff));
+            double x, x1, x2, y1, y2;
+            x1 = axisData[coords[1]].getBinValue();
+            x2 = axisData[coords[3]].getBinValue();
+            for (i = coords[0]; i <= coords[2]; ++i) {
+                y1 = tableData[i][coords[1]].getBinValue();
+                y2 = tableData[i][coords[3]].getBinValue();
+                for (j = coords[1] + 1; j < coords[3]; ++j) {
+                    x = axisData[j].getBinValue();
+                    tableData[i][j].setBinValue(linearInterpolation(x, x1, x2, y1, y2));
                 }
             }
         }
@@ -818,29 +886,32 @@ public class Table3D extends Table {
     public void horizontalInterpolate() {
         int[] coords = { getSizeX(), getSizeY(), 0, 0 };
         DataCell[][] tableData = get3dData();
-
-        int x, y;
-        for (x = 0; x < getSizeX(); x++) {
-            for (y = 0; y < getSizeY(); y++) {
-                if (tableData[x][y].isSelected()) {
-                    if (x < coords[0])
-                        coords[0] = x;
-                    if (x > coords[2])
-                        coords[2] = x;
-                    if (y < coords[1])
-                        coords[1] = y;
-                    if (y > coords[3])
-                        coords[3] = y;
+        DataCell[] axisData = getXAxis().getData();
+        int i, j;
+        for (i = 0; i < getSizeX(); ++i) {
+            for (j = 0; j < getSizeY(); ++j) {
+                if (tableData[i][j].isSelected()) {
+                    if (i < coords[0])
+                        coords[0] = i;
+                    if (i > coords[2])
+                        coords[2] = i;
+                    if (j < coords[1])
+                        coords[1] = j;
+                    if (j > coords[3])
+                        coords[3] = j;
                 }
             }
         }
         if (coords[2] - coords[0] > 1) {
-            double diff;
-            for (x = coords[1]; x <= coords[3]; x++) {
-                diff = (tableData[coords[0]][x].getRealValue() - tableData[coords[2]][x].getRealValue()) / (coords[2] - coords[0]);
-                if (Math.abs(diff) > 0) {
-                    for (y = coords[0] + 1; y < coords[2]; y++)
-                        tableData[y][x].setRealValue(String.valueOf(tableData[y - 1][x].getRealValue() - diff));
+            double x, x1, x2, y1, y2;
+            x1 = axisData[coords[0]].getBinValue();
+            x2 = axisData[coords[2]].getBinValue();
+            for (i = coords[1]; i <= coords[3]; ++i) {
+                y1 = tableData[coords[0]][i].getBinValue();
+                y2 = tableData[coords[2]][i].getBinValue();
+                for (j = coords[0] + 1; j < coords[2]; ++j) {
+                    x = axisData[j].getBinValue();
+                    tableData[j][i].setBinValue(linearInterpolation(x, x1, x2, y1, y2));
                 }
             }
         }
@@ -957,10 +1028,6 @@ public class Table3D extends Table {
         super.setOverlayLog(overlayLog);
         xAxis.setOverlayLog(overlayLog);
         yAxis.setOverlayLog(overlayLog);
-        if (overlayLog) {
-            xAxis.clearLiveDataTrace();
-            yAxis.clearLiveDataTrace();
-        }
     }
 
     @Override
@@ -1076,12 +1143,11 @@ class CopySelection3DWorker extends SwingWorker<Void, Void> {
         }
         // make string of selection
         if (copy) {
-            String newline = System.getProperty("line.separator");
-            StringBuffer output = new StringBuffer("[Selection3D]" + newline);
+            StringBuffer output = new StringBuffer("[Selection3D]" + Settings.NEW_LINE);
             for (int y = coords[1]; y <= coords[3]; y++) {
                 for (int x = coords[0]; x <= coords[2]; x++) {
                     if (table.get3dData()[x][y].isSelected()) {
-                        output.append(table.get3dData()[x][y].getText());
+                        output.append(NumberUtil.stringValue(table.get3dData()[x][y].getRealValue()));
                     } else {
                         output.append("x"); // x represents non-selected cell
                     }
@@ -1090,7 +1156,7 @@ class CopySelection3DWorker extends SwingWorker<Void, Void> {
                     }
                 }
                 if (y < coords[3]) {
-                    output.append(newline);
+                    output.append(Settings.NEW_LINE);
                 }
                 //copy to clipboard
                 Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(String.valueOf(output)), null);

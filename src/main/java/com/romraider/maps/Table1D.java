@@ -1,6 +1,6 @@
 /*
  * RomRaider Open-Source Tuning, Logging and Reflashing
- * Copyright (C) 2006-2012 RomRaider.com
+ * Copyright (C) 2006-2016 RomRaider.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,10 +20,10 @@
 package com.romraider.maps;
 
 import java.awt.BorderLayout;
-
 import javax.swing.JLabel;
 
 import com.romraider.Settings;
+import com.romraider.util.NumberUtil;
 
 public class Table1D extends Table {
     private static final long serialVersionUID = -8747180767803835631L;
@@ -151,6 +151,77 @@ public class Table1D extends Table {
         }
     }
 
+	@Override
+	public void shiftCursorUp() {
+        if (type == Settings.TABLE_Y_AXIS) {
+            if (highlightY > 0 && data[highlightY].isSelected()) {
+            	selectCellAtWithoutClear(highlightY - 1);
+            }
+        } else if (type == Settings.TABLE_X_AXIS) {
+            // Y axis is on top.. nothing happens
+        } else if (type == Settings.TABLE_1D) {
+            // no where to move up to
+        }
+	}
+
+	@Override
+	public void shiftCursorDown() {
+        if (type == Settings.TABLE_Y_AXIS) {
+            if (getAxisParent().getType() == Settings.TABLE_3D) {
+                if (highlightY < getDataSize() - 1 && data[highlightY].isSelected()) {
+                	selectCellAtWithoutClear(highlightY + 1);
+                }
+            } else if (getAxisParent().getType() == Settings.TABLE_2D) {
+                if (data[highlightY].isSelected()) {
+                    getAxisParent().selectCellAtWithoutClear(highlightY);
+                }
+            }
+        } else if (type == Settings.TABLE_X_AXIS && data[highlightY].isSelected()) {
+            ((Table3D) getAxisParent()).selectCellAt(highlightY, this);
+        } else if (type == Settings.TABLE_1D) {
+            // no where to move down to
+        }
+	}
+
+	@Override
+	public void shiftCursorLeft() {
+        if (type == Settings.TABLE_Y_AXIS) {
+            // X axis is on left.. nothing happens
+            if (getAxisParent().getType() == Settings.TABLE_2D) {
+                if (data[highlightY].isSelected()) {
+                	selectCellAtWithoutClear(highlightY - 1);
+                }
+            }
+        } else if (type == Settings.TABLE_X_AXIS && data[highlightY].isSelected()) {
+            if (highlightY > 0) {
+            	selectCellAtWithoutClear(highlightY - 1);
+            }
+        } else if (type == Settings.TABLE_1D && data[highlightY].isSelected()) {
+            if (highlightY > 0) {
+            	selectCellAtWithoutClear(highlightY - 1);
+            }
+        }
+	}
+
+	@Override
+	public void shiftCursorRight() {
+        if (type == Settings.TABLE_Y_AXIS && data[highlightY].isSelected()) {
+            if (getAxisParent().getType() == Settings.TABLE_3D) {
+                ((Table3D) getAxisParent()).selectCellAt(highlightY, this);
+            } else if (getAxisParent().getType() == Settings.TABLE_2D) {
+            	selectCellAtWithoutClear(highlightY + 1);
+            }
+        } else if (type == Settings.TABLE_X_AXIS && data[highlightY].isSelected()) {
+            if (highlightY < getDataSize() - 1) {
+            	selectCellAtWithoutClear(highlightY + 1);
+            }
+        } else if (type == Settings.TABLE_1D && data[highlightY].isSelected()) {
+            if (highlightY < getDataSize() - 1) {
+            	selectCellAtWithoutClear(highlightY + 1);
+            }
+        }
+	}
+
     @Override
     public void clearSelection() {
         // Call to the axis parent.  The axis parent should then call to clear this data.
@@ -186,9 +257,10 @@ public class Table1D extends Table {
     public void highlightLiveData(String liveVal) {
         if (getOverlayLog()) {
             double liveValue = 0.0;
-            try{
-                liveValue = Double.parseDouble(liveVal);
-            } catch(NumberFormatException nex) {
+            try {
+                liveValue = NumberUtil.doubleValue(liveVal);
+            } catch (Exception ex) {
+            	LOGGER.error("Table1D - live data highlight parsing error for value: " + liveVal);
                 return;
             }
 
